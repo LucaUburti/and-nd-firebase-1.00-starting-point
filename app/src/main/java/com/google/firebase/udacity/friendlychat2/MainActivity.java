@@ -15,11 +15,15 @@
  */
 package com.google.firebase.udacity.friendlychat2;
 
+import android.content.DialogInterface;
 import android.content.Intent;
+import android.content.SharedPreferences;
 import android.net.Uri;
 import android.os.Bundle;
+import android.preference.PreferenceManager;
 import android.support.annotation.NonNull;
 import android.support.annotation.Nullable;
+import android.support.v7.app.AlertDialog;
 import android.support.v7.app.AppCompatActivity;
 import android.text.Editable;
 import android.text.InputFilter;
@@ -36,6 +40,7 @@ import android.widget.ListView;
 import android.widget.ProgressBar;
 import android.widget.Toast;
 
+import com.crashlytics.android.Crashlytics;
 import com.firebase.ui.auth.AuthUI;
 import com.firebase.ui.auth.IdpResponse;
 import com.google.android.gms.tasks.Continuation;
@@ -62,6 +67,8 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
+import io.fabric.sdk.android.Fabric;
+
 public class MainActivity extends AppCompatActivity {
 
     private static final String TAG = "MainActivity";
@@ -81,17 +88,20 @@ public class MainActivity extends AppCompatActivity {
     private static final int RC_PHOTO_PICKER = 2;
     private String mUsername;
 
+
     private FirebaseDatabase mFirebaseDatabase;    //il DB
     private DatabaseReference mMessagesDatabaseReference;    //reference verso una parte specifica del DB
     private FirebaseStorage firebaseStorage;
     private StorageReference storageReference;
     private FirebaseRemoteConfig firebaseRemoteConfig;
 
+    private static String CRASHLYTICS_CONSENT_KEY = "crashlytics_consent_key";
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
-
+        checkCrashlyticsConsent();
         mUsername = ANONYMOUS;
 
 
@@ -171,7 +181,7 @@ public class MainActivity extends AppCompatActivity {
 
         int cacheExpiration = 3600; //cache expires after 1 hour
         if (firebaseRemoteConfig.getInfo().getConfigSettings().isDeveloperModeEnabled()) {
-           cacheExpiration = 0; //if in Debug, no caching
+            cacheExpiration = 0; //if in Debug, no caching
         }
         firebaseRemoteConfig.fetch(cacheExpiration).addOnSuccessListener(new OnSuccessListener<Void>() {
             @Override
@@ -179,7 +189,7 @@ public class MainActivity extends AppCompatActivity {
                 firebaseRemoteConfig.activateFetched();
                 Long fetchedMsgLength = firebaseRemoteConfig.getLong(FRIENDLY_MSG_LENGTH_KEY);
                 mMessageEditText.setFilters(new InputFilter[]{new InputFilter.LengthFilter((fetchedMsgLength.intValue()))});
-                Toast.makeText(MainActivity.this, "fetch succeded, new value: "+fetchedMsgLength, Toast.LENGTH_SHORT).show();
+                Toast.makeText(MainActivity.this, "fetch succeded, new value: " + fetchedMsgLength, Toast.LENGTH_SHORT).show();
             }
         }).addOnFailureListener(new OnFailureListener() {
             @Override
@@ -187,9 +197,46 @@ public class MainActivity extends AppCompatActivity {
                 Log.d(TAG, "Error fetching config, using last retrieved value");
                 Long fetchedMsgLength = firebaseRemoteConfig.getLong(FRIENDLY_MSG_LENGTH_KEY);
                 mMessageEditText.setFilters(new InputFilter[]{new InputFilter.LengthFilter((fetchedMsgLength.intValue()))});
-                Toast.makeText(MainActivity.this, "fetch error: "+((FirebaseRemoteConfigFetchException)e).getCause()+"\nuso valore: "+fetchedMsgLength, Toast.LENGTH_LONG).show();
+                Toast.makeText(MainActivity.this, "fetch error: " + ((FirebaseRemoteConfigFetchException) e).getCause() + "\nuso valore: " + fetchedMsgLength, Toast.LENGTH_LONG).show();
             }
         });
+    }
+
+    private boolean checkCrashlyticsConsent() {
+
+        final SharedPreferences sharedPrefs = PreferenceManager.getDefaultSharedPreferences(this);
+        String consent = sharedPrefs.getString(CRASHLYTICS_CONSENT_KEY, "");
+        if (consent.isEmpty()) {
+            Log.d(TAG, "checkCrashlyticsConsent: Consent not given yet, asking....");
+            new AlertDialog.Builder(this, R.style.AlertDialogTheme).setTitle("Crash reporting").setMessage("Do you want to send anonymous crash reports?")
+                    .setPositiveButton("OK", new DialogInterface.OnClickListener() {
+                        @Override
+                        public void onClick(DialogInterface dialog, int which) {
+                            SharedPreferences.Editor editor = sharedPrefs.edit();
+                            editor.putString(CRASHLYTICS_CONSENT_KEY, "yes");
+                            editor.apply();
+                        }
+                    })
+                    .setNegativeButton("NOPE", new DialogInterface.OnClickListener() {
+                        @Override
+                        public void onClick(DialogInterface dialog, int which) {
+                            SharedPreferences.Editor editor = sharedPrefs.edit();
+                            editor.putString(CRASHLYTICS_CONSENT_KEY, "no");
+                            editor.apply();
+                        }
+                    }).show();
+            consent = sharedPrefs.getString(CRASHLYTICS_CONSENT_KEY, "");   //check again now
+        }
+
+        if (consent.equals("yes")){
+            Fabric.with(MainActivity.this, new Crashlytics());
+            Log.d(TAG, "checkCrashlyticsConsent: consent given");
+            return true;
+        } else {
+            Log.d(TAG, "checkCrashlyticsConsent: consent denied");
+            return false;
+        }
+
     }
 
 
@@ -261,12 +308,6 @@ public class MainActivity extends AppCompatActivity {
 
     }
 
-    @Override
-    public boolean onCreateOptionsMenu(Menu menu) {
-        MenuInflater inflater = getMenuInflater();
-        inflater.inflate(R.menu.main_menu, menu);
-        return true;
-    }
 
     @Override
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
@@ -321,7 +362,26 @@ public class MainActivity extends AppCompatActivity {
                 }
             });
         }
+        if (item.getItemId() == R.id.crash_me) {
+            if (checkCrashlyticsConsent()) {
+                Log.d(TAG, "onOptionsItemSelected: crashing and reporting to Crashlytics");
+                Crashlytics.log(android.util.Log.ERROR, "MIOTAG", "Mio Msg");
+                Crashlytics.setString("MYSTRINGKEY", "Mia stringa");
+                Crashlytics.setInt("MYINTKEY", 42);
+                Crashlytics.getInstance().crash();
+            } else {
+                Log.d(TAG, "onOptionsItemSelected: crashing without reporting to Crashlytics");
+                Toast.makeText(this, 1 / 0, Toast.LENGTH_SHORT).show();
+            }
+        }
         return super.onOptionsItemSelected(item);
+    }
+
+    @Override
+    public boolean onCreateOptionsMenu(Menu menu) {
+        MenuInflater inflater = getMenuInflater();
+        inflater.inflate(R.menu.main_menu, menu);
+        return true;
     }
 
 

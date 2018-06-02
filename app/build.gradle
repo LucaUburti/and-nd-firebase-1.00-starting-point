@@ -30,7 +30,6 @@ android {
         exclude 'META-INF/NOTICE'
     }
 }
-
 dependencies {
     implementation fileTree(dir: 'libs', include: ['*.jar'])
     testImplementation 'junit:junit:4.12'
@@ -47,5 +46,7 @@ dependencies {
     implementation 'com.google.firebase:firebase-storage:16.0.1'
     implementation 'com.google.firebase:firebase-messaging:17.0.0'
     implementation 'com.google.firebase:firebase-config:16.0.0'
+    implementation 'com.crashlytics.sdk.android:crashlytics:2.9.3'
 }
 apply plugin: 'com.google.gms.google-services'
+apply plugin: 'io.fabric'
